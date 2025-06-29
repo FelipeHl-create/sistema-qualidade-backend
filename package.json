@@ -1,0 +1,23 @@
+{
+  "name": "sistema-qualidade-backend",
+  "version": "1.0.0",
+  "description": "Backend do Sistema de Controle da Qualidade",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "bcrypt": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "mysql2": "^3.6.0",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "keywords": ["qualidade", "controle", "api"],
+  "author": "Seu Nome",
+  "license": "MIT"
+}
