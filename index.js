@@ -30,10 +30,14 @@ function autenticarToken(req, res, next) {
   });
 }
 
-// Cadastro de funcionário
-app.post('/api/funcionarios', async (req, res) => {
+// Cadastro de funcionário (agora restrito para admin)
+app.post('/api/funcionarios', autenticarToken, async (req, res) => {
   try {
-    const { nome, cpf, email, funcao, senha } = req.body;
+    // Só admin pode cadastrar
+    if (req.usuario.perfil !== 'admin') {
+      return res.status(403).json({ erro: 'Apenas administradores podem cadastrar novos usuários.' });
+    }
+    const { nome, cpf, email, funcao, senha, perfil } = req.body;
     // Verifica duplicidade
     const [existe] = await pool.execute(
       'SELECT * FROM funcionarios WHERE email = ? OR cpf = ?', 
@@ -45,7 +49,7 @@ app.post('/api/funcionarios', async (req, res) => {
     const hash = await bcrypt.hash(senha, 10);
     await pool.execute(
       'INSERT INTO funcionarios (nome, cpf, email, funcao, senha, perfil) VALUES (?, ?, ?, ?, ?, ?)',
-      [nome, cpf, email, funcao, hash, 'funcionario']
+      [nome, cpf, email, funcao, hash, perfil === 'admin' ? 'admin' : 'funcionario']
     );
     res.status(201).json({ mensagem: 'Funcionário cadastrado com sucesso.' });
   } catch (error) {
