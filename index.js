@@ -143,6 +143,35 @@ app.get('/', (req, res) => {
   res.json({ mensagem: 'Sistema de Controle da Qualidade - Backend funcionando!' });
 });
 
+// ROTA TEMPORÁRIA PARA CRIAR ADMIN (REMOVER APÓS USO)
+app.post('/criar-admin', async (req, res) => {
+  try {
+    const nome = 'Admin';
+    const cpf = '00000000000';
+    const email = 'admin@steck.com.br';
+    const funcao = 'Administrador';
+    const senha = 'admin123'; // senha padrão, altere depois
+    const perfil = 'admin';
+    // Verifica duplicidade
+    const [existe] = await pool.execute(
+      'SELECT * FROM funcionarios WHERE email = ? OR cpf = ?',
+      [email, cpf]
+    );
+    if (existe.length > 0) {
+      return res.status(400).json({ erro: 'E-mail ou CPF já cadastrado.' });
+    }
+    const hash = await bcrypt.hash(senha, 10);
+    await pool.execute(
+      'INSERT INTO funcionarios (nome, cpf, email, funcao, senha, perfil) VALUES (?, ?, ?, ?, ?, ?)',
+      [nome, cpf, email, funcao, hash, perfil]
+    );
+    res.status(201).json({ mensagem: 'Admin criado com sucesso!' });
+  } catch (error) {
+    console.error('Erro ao criar admin:', error);
+    res.status(500).json({ erro: 'Erro interno do servidor.' });
+  }
+});
+
 // Inicialização do servidor
  const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
