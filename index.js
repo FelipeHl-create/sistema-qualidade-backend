@@ -1,23 +1,35 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const mysql = require('mysql2/promise');
 const cors = require('cors');
 
 const app = express();
 app.use(express.json());
 app.use(cors());
 
-// Configuração do banco de dados MySQL
-const pool = mysql.createPool({
-  host: 'localhost',
-  user: 'root',
-  password: 'senha123',
-  database: 'qualidade',
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0
-});
+// Dados em memória para teste (substituir por MySQL depois)
+const usuarios = [
+  {
+    id: 1,
+    nome: 'Administrador',
+    cpf: '00000000000',
+    email: 'admin@steck.com.br',
+    funcao: 'Administrador',
+    senha: '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', // admin123
+    perfil: 'admin'
+  },
+  {
+    id: 2,
+    nome: 'Usuário Teste',
+    cpf: '11111111111',
+    email: 'teste@steck.com.br',
+    funcao: 'Operador',
+    senha: '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', // teste123
+    perfil: 'funcionario'
+  }
+];
+
+const documentos = [];
 
 // Middleware de autenticação
 function autenticarToken(req, res, next) {
@@ -30,49 +42,25 @@ function autenticarToken(req, res, next) {
   });
 }
 
-// Cadastro de funcionário (agora restrito para admin)
-app.post('/api/funcionarios', autenticarToken, async (req, res) => {
-  try {
-    // Só admin pode cadastrar
-    if (req.usuario.perfil !== 'admin') {
-      return res.status(403).json({ erro: 'Apenas administradores podem cadastrar novos usuários.' });
-    }
-    const { nome, cpf, email, funcao, senha, perfil } = req.body;
-    // Verifica duplicidade
-    const [existe] = await pool.execute(
-      'SELECT * FROM funcionarios WHERE email = ? OR cpf = ?', 
-      [email, cpf]
-    );
-    if (existe.length > 0) {
-      return res.status(400).json({ erro: 'E-mail ou CPF já cadastrado.' });
-    }
-    const hash = await bcrypt.hash(senha, 10);
-    await pool.execute(
-      'INSERT INTO funcionarios (nome, cpf, email, funcao, senha, perfil) VALUES (?, ?, ?, ?, ?, ?)',
-      [nome, cpf, email, funcao, hash, perfil === 'admin' ? 'admin' : 'funcionario']
-    );
-    res.status(201).json({ mensagem: 'Funcionário cadastrado com sucesso.' });
-  } catch (error) {
-    console.error('Erro no cadastro:', error);
-    res.status(500).json({ erro: 'Erro interno do servidor.' });
-  }
-});
-
 // Login de usuário
 app.post('/api/login', async (req, res) => {
   try {
     const { email, senha } = req.body;
-    const [resultado] = await pool.execute(
-      'SELECT * FROM funcionarios WHERE email = ?', 
-      [email]
-    );
-    if (resultado.length === 0) {
+    
+    // Buscar usuário
+    const usuario = usuarios.find(u => u.email === email);
+    if (!usuario) {
       return res.status(400).json({ erro: 'Usuário não encontrado.' });
     }
-    const usuario = resultado[0];
-    if (!(await bcrypt.compare(senha, usuario.senha))) {
+    
+    // Verificar senha (usando senhas fixas para teste)
+    const senhaCorreta = (email === 'admin@steck.com.br' && senha === 'admin123') ||
+                        (email === 'teste@steck.com.br' && senha === 'teste123');
+    
+    if (!senhaCorreta) {
       return res.status(400).json({ erro: 'Senha incorreta.' });
     }
+    
     // Gera token JWT
     const token = jwt.sign(
       { id: usuario.id, perfil: usuario.perfil }, 
@@ -86,16 +74,56 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
+// Cadastro de funcionário (agora restrito para admin)
+app.post('/api/funcionarios', autenticarToken, async (req, res) => {
+  try {
+    // Só admin pode cadastrar
+    if (req.usuario.perfil !== 'admin') {
+      return res.status(403).json({ erro: 'Apenas administradores podem cadastrar novos usuários.' });
+    }
+    const { nome, cpf, email, funcao, senha, perfil } = req.body;
+    
+    // Verifica duplicidade
+    const existe = usuarios.find(u => u.email === email || u.cpf === cpf);
+    if (existe) {
+      return res.status(400).json({ erro: 'E-mail ou CPF já cadastrado.' });
+    }
+    
+    const novoUsuario = {
+      id: usuarios.length + 1,
+      nome,
+      cpf,
+      email,
+      funcao,
+      senha: await bcrypt.hash(senha, 10),
+      perfil: perfil === 'admin' ? 'admin' : 'funcionario'
+    };
+    
+    usuarios.push(novoUsuario);
+    res.status(201).json({ mensagem: 'Funcionário cadastrado com sucesso.' });
+  } catch (error) {
+    console.error('Erro no cadastro:', error);
+    res.status(500).json({ erro: 'Erro interno do servidor.' });
+  }
+});
+
 // Preenchimento de documento de qualidade
 app.post('/api/documentos', autenticarToken, async (req, res) => {
   try {
     const { produto, campos, finalizado } = req.body;
     const usuarioId = req.usuario.id;
     const data = new Date();
-    await pool.execute(
-      'INSERT INTO documentos (usuario_id, produto, campos, data_preenchimento, finalizado) VALUES (?, ?, ?, ?, ?)',
-      [usuarioId, produto, JSON.stringify(campos), data, finalizado]
-    );
+    
+    const novoDocumento = {
+      id: documentos.length + 1,
+      usuario_id: usuarioId,
+      produto,
+      campos: JSON.stringify(campos),
+      data_preenchimento: data,
+      finalizado
+    };
+    
+    documentos.push(novoDocumento);
     res.status(201).json({ mensagem: 'Documento salvo.' });
   } catch (error) {
     console.error('Erro ao salvar documento:', error);
@@ -106,18 +134,13 @@ app.post('/api/documentos', autenticarToken, async (req, res) => {
 // Listagem de documentos (funcionário vê só os seus, admin vê todos)
 app.get('/api/documentos', autenticarToken, async (req, res) => {
   try {
-    let documentos;
+    let documentosFiltrados;
     if (req.usuario.perfil === 'admin') {
-      const [resultado] = await pool.execute('SELECT * FROM documentos');
-      documentos = resultado;
+      documentosFiltrados = documentos;
     } else {
-      const [resultado] = await pool.execute(
-        'SELECT * FROM documentos WHERE usuario_id = ?', 
-        [req.usuario.id]
-      );
-      documentos = resultado;
+      documentosFiltrados = documentos.filter(d => d.usuario_id === req.usuario.id);
     }
-    res.json(documentos);
+    res.json(documentosFiltrados);
   } catch (error) {
     console.error('Erro ao listar documentos:', error);
     res.status(500).json({ erro: 'Erro interno do servidor.' });
@@ -130,7 +153,6 @@ app.get('/api/exportar', autenticarToken, async (req, res) => {
     if (req.usuario.perfil !== 'admin') {
       return res.sendStatus(403);
     }
-    const [documentos] = await pool.execute('SELECT * FROM documentos');
     res.json(documentos); // Exemplo: exportação em JSON
   } catch (error) {
     console.error('Erro na exportação:', error);
@@ -143,38 +165,23 @@ app.get('/', (req, res) => {
   res.json({ mensagem: 'Sistema de Controle da Qualidade - Backend funcionando!' });
 });
 
-// ROTA TEMPORÁRIA PARA CRIAR ADMIN (REMOVER APÓS USO)
-app.post('/criar-admin', async (req, res) => {
-  try {
-    const nome = 'Admin';
-    const cpf = '00000000000';
-    const email = 'admin@steck.com.br';
-    const funcao = 'Administrador';
-    const senha = 'admin123'; // senha padrão, altere depois
-    const perfil = 'admin';
-    // Verifica duplicidade
-    const [existe] = await pool.execute(
-      'SELECT * FROM funcionarios WHERE email = ? OR cpf = ?',
-      [email, cpf]
-    );
-    if (existe.length > 0) {
-      return res.status(400).json({ erro: 'E-mail ou CPF já cadastrado.' });
+// Rota para verificar usuários disponíveis (apenas para teste)
+app.get('/api/usuarios-teste', (req, res) => {
+  res.json({
+    usuarios: usuarios.map(u => ({ email: u.email, perfil: u.perfil })),
+    credenciais: {
+      admin: { email: 'admin@steck.com.br', senha: 'admin123' },
+      teste: { email: 'teste@steck.com.br', senha: 'teste123' }
     }
-    const hash = await bcrypt.hash(senha, 10);
-    await pool.execute(
-      'INSERT INTO funcionarios (nome, cpf, email, funcao, senha, perfil) VALUES (?, ?, ?, ?, ?, ?)',
-      [nome, cpf, email, funcao, hash, perfil]
-    );
-    res.status(201).json({ mensagem: 'Admin criado com sucesso!' });
-  } catch (error) {
-    console.error('Erro ao criar admin:', error);
-    res.status(500).json({ erro: 'Erro interno do servidor.' });
-  }
+  });
 });
 
 // Inicialização do servidor
- const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
-  console.log(`Acesse: http://localhost:${PORT}`);
+  console.log(`🚀 Servidor rodando na porta ${PORT}`);
+  console.log(`📱 Acesse: http://localhost:${PORT}`);
+  console.log('\n👥 Usuários disponíveis para teste:');
+  console.log('👨‍💼 Admin: admin@steck.com.br / admin123');
+  console.log('👤 Teste: teste@steck.com.br / teste123');
 });
